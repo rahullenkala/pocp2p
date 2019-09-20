@@ -92,7 +92,7 @@ func ParseFlags() (Config, error) {
 	if len(config.BootstrapPeers) == 0 {
 
 		//config.BootstrapPeers = dht.DefaultBootstrapPeers
-		addr, err := maddr.NewMultiaddr("/ip4/182.71.123.202/tcp/4321/p2p/QmdSyhb8eR9dDSR5jjnRoTDBwpBCSAjT7WueKJ9cQArYoA")
+		addr, err := maddr.NewMultiaddr("/ip4/157.245.238.65/tcp/4001/p2p/QmP2C45o2vZfy1JXWFZDUEzrQCigMtd4r3nesvArV8dFKd")
 		fmt.Println(err)
 		config.BootstrapPeers = append(config.BootstrapPeers, addr)
 		//
