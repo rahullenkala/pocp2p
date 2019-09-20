@@ -4,6 +4,8 @@ import (
 	"context"
 
 	"flag"
+	
+	"net"
 
 	"fmt"
 
@@ -20,6 +22,7 @@ import (
 	"os"
 )
 
+var ipaddrss="null"
 func main() {
 
 	help := flag.Bool("help", false, "Display Help")
@@ -39,8 +42,20 @@ func main() {
 		os.Exit(0)
 
 	}
-
-	fmt.Printf("[*] Listening on: %s with port: %d\n", *listenHost, *port)
+	addrs,err:=net.InterfaceAddrs()
+	if err!=nil{
+		os.Stderr.WriteString("Oops:"+err.Error()+"\n")
+		os.Exit(1)
+	}
+	
+	for _,a:=range addrs{
+		if ipnet,ok:=a.(*net.IPNet);ok&&!ipnet.IP.IsLoopback(){
+			if ipnet.IP.To4()!=nil{
+				ipaddrss=ipnet.IP.String()
+			}
+		}
+	}
+	fmt.Printf("[*] Listening on: %s with port: %d\n", ipaddrss, *port)
 
 	ctx := context.Background()
 
@@ -58,7 +73,7 @@ func main() {
 
 	// 0.0.0.0 will listen on any interface device.
 
-	sourceMultiAddr, _ := multiaddr.NewMultiaddr(fmt.Sprintf("/ip4/%s/tcp/%d", *listenHost, *port))
+	sourceMultiAddr, _ := multiaddr.NewMultiaddr(fmt.Sprintf("/ip4/%s/tcp/%d",ipaddrss, *port))
 
 	// libp2p.New constructs a new libp2p Host.
 
@@ -67,10 +82,13 @@ func main() {
 	host, err := libp2p.New(
 
 		ctx,
+		
+		libp2p.NATPortMap(),
 
 		libp2p.ListenAddrs(sourceMultiAddr),
 
 		libp2p.Identity(prvKey),
+		
 	)
 
 	if err != nil {
@@ -89,7 +107,7 @@ func main() {
 
 	fmt.Println("")
 
-	fmt.Printf("[*] Your Bootstrap ID Is: /ip4/%s/tcp/%v/p2p/%s\n", *listenHost, *port, host.ID().Pretty())
+	fmt.Printf("[*] Your Bootstrap ID Is: /ip4/%s/tcp/%v/p2p/%s\n", ipaddrss, *port, host.ID().Pretty())
 
 	fmt.Println("")
 
