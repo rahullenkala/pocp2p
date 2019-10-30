@@ -9,12 +9,13 @@ import (
 
 	"fmt"
 
-	"os"
-
 	"sync"
+
+	proto "github.com/golang/protobuf/proto"
 
 	"github.com/libp2p/go-libp2p"
 
+	"github.com/libp2p/go-libp2p-core/host"
 	"github.com/libp2p/go-libp2p-core/network"
 
 	"github.com/libp2p/go-libp2p-core/peer"
@@ -29,12 +30,99 @@ import (
 
 	"github.com/ipfs/go-log"
 
-	"practice/flagt"
+	mp "./mylib"
+
+	"./flagt"
 )
 
-var flagpeer = 0
+//var walletmap = make(map[string]string)
+var done = make(chan []byte)
+var walletmap4 *mp.WalletMap
+var host1 host.Host
+
+//var m = make(map[string]string)
+
 var logger = log.Logger("rendezvous")
 
+func sendResponse(str string) {
+	//fmt.Println("Inresponse")
+	msg := Cntxtmessage{
+
+		Type:      Cntxtmessage_RESPONSE,
+		Data:      walletmap4.Data,
+		Sid:       host1.ID().String(),
+		Delimiter: "|",
+	}
+	data, err := proto.Marshal(&msg)
+	if err != nil {
+		logger.Error("Marshaling error")
+		fmt.Println(err)
+	}
+	ctx := context.Background()
+	//config, err := flagt.ParseFlags()
+	fmt.Println(str)
+	id, err1 := peer.IDB58Decode(str)
+	if err1 != nil {
+		fmt.Println("panic !!") //go readData(rw, done)
+		panic(err1)
+	}
+	//fmt.Print("Up stream")
+	//fmt.Print(host1)
+	stream1, err := host1.NewStream(ctx, id, protocol.ID("/chat/1.1.0"))
+	if err != nil {
+		panic(err)
+	}
+
+	rw := bufio.NewReadWriter(bufio.NewReader(stream1), bufio.NewWriter(stream1))
+	writeData(rw, data)
+	fmt.Println("Response sent to:", str)
+}
+func sendQuery(rw *bufio.ReadWriter, id string) {
+	fmt.Println("Sending Query")
+	//rw := bufio.NewReadWriter(bufio.NewReader(stream), bufio.NewWriter(stream))
+	msg := Cntxtmessage{
+
+		Type:      Cntxtmessage_QUERY,
+		Data:      nil,
+		Sid:       id,
+		Delimiter: "|",
+	}
+	data, err := proto.Marshal(&msg)
+	if err != nil {
+		logger.Error("Marshaling error")
+		fmt.Println(err)
+	}
+	//fmt.Println(data)
+	writeData(rw, data)
+
+	//go readData(rw, done)
+
+}
+func processmessage(rw *bufio.ReadWriter, msg []byte) {
+	recieved := &Cntxtmessage{}    //Create a template of message
+	proto.Unmarshal(msg, recieved) //unmarshal the message
+
+	var MsgType = recieved.GetType() //Identify the type of message
+	var senderid = recieved.GetSid()
+
+	fmt.Println("Processing the message")
+	if MsgType == Cntxtmessage_QUERY {
+		fmt.Println("Its a query from Node: ", senderid)
+		fmt.Println("Intiating Response ")
+		sendResponse(senderid)
+
+	} else {
+		fmt.Println("It is Response message from Node:", senderid)
+		fmt.Println("Adding Response data to local Map")
+		MapData := recieved.GetData()
+		walletmap4.PutEntries(MapData)
+		fmt.Println("Wallet Details", walletmap4.Data)
+
+	}
+
+	//fmt.Println("hello", map1.Data)
+
+}
 func handleStream(stream network.Stream) {
 
 	logger.Info("Got a new stream!")
@@ -42,93 +130,89 @@ func handleStream(stream network.Stream) {
 	// Create a buffer stream for non blocking read and write.
 
 	rw := bufio.NewReadWriter(bufio.NewReader(stream), bufio.NewWriter(stream))
+	//rw.
 
-	go readData(rw)
+	go readData(rw, done)
 
-	go writeData(rw)
+	//map[]
+
+	// walletmap5 := mp.New()
+	// walletmap5.Put("WalletId:1213425443535453545435", "Address:15446546try647465476uy65tyr")
+
+	// msg := Cntxtmessage{
+
+	// 	Type:      Cntxtmessage_RESPONSE,
+	// 	Data:      walletmap5.Data,
+	// 	Sid:       "nil",
+	// 	Delimiter: "|",
+	// }
+	// data, err := proto.Marshal(&msg)
+	// if err != nil {
+	// 	logger.Error("Marshaling error")
+	// 	fmt.Println(err)
+	// }
+
+	// stream.Write(data)
+	//go writeData(rw, []byte("rahul"))
 
 	// 'stream' will stay open until you close it (or the other side closes it).
 
 }
 
-func readData(rw *bufio.ReadWriter) {
-
+func readData(rw *bufio.ReadWriter, done chan []byte) {
+	fmt.Println("\x1b[32m", "New Message recieved")
 	for {
+		//rw.read
 
-		str, err := rw.ReadString('\n')
+		//var buf []byte
+		data, err := rw.ReadBytes(124)
 
 		if err != nil {
 
 			fmt.Println("Error reading from buffer")
 
 			panic(err)
-
 		}
 
-		if str == "" {
+		//fmt.Println(data)
+		processmessage(rw, data)
 
-			return
+		//done <- data
 
-		}
-
-		if str != "\n" {
-
-			// Green console colour: 	\x1b[32m
-
-			// Reset console colour: 	\x1b[0m
-
-			fmt.Println("Message:", str)
-
-		}
-
+		fmt.Print("Outstide read function")
 	}
-
 }
 
-func writeData(rw *bufio.ReadWriter) {
+func writeData(rw *bufio.ReadWriter, data []byte) {
 
-	stdReader := bufio.NewReader(os.Stdin)
+	//stdReader := bufio.NewReader(os.Stdin)
+	//fmt.Println(data)
+	_, err := rw.Write(data)
 
-	for {
+	if err != nil {
 
-		fmt.Print("> ")
+		fmt.Println("Error writing to buffer")
 
-		sendData, err := stdReader.ReadString('\n')
+		panic(err)
 
-		if err != nil {
+	}
+	//fmt.Println("No.of bytes:", leng)
+	err = rw.Flush()
 
-			fmt.Println("Error reading from stdin")
+	if err != nil {
 
-			panic(err)
+		fmt.Println("Error flushing buffer")
 
-		}
-
-		_, err = rw.WriteString(fmt.Sprintf("%s\n", sendData))
-
-		if err != nil {
-
-			fmt.Println("Error writing to buffer")
-
-			panic(err)
-
-		}
-
-		err = rw.Flush()
-
-		if err != nil {
-
-			fmt.Println("Error flushing buffer")
-
-			panic(err)
-
-		}
+		panic(err)
 
 	}
 
 }
 
 func main() {
-
+	walletmap4 = mp.New()
+	walletmap4.Put("WalletId:21", "Address:21")
+	//walletmap4.Put("WalletId:22", "Address:123")
 	//log.SetAllLoggers(logging.WARNING)
 
 	log.SetLogLevel("rendezvous", "info")
@@ -163,27 +247,27 @@ func main() {
 
 	// here.
 
-	host, err := libp2p.New(ctx, libp2p.NATPortMap(),
+	host1, err = libp2p.New(ctx, libp2p.NATPortMap(),
 		libp2p.ListenAddrs([]multiaddr.Multiaddr(config.ListenAddresses)...),
 	)
-
+	//fmt.Print(host1)
 	if err != nil {
 
 		panic(err)
 
 	}
 
-	logger.Info("Host created. We are:", host.ID())
+	logger.Info("Host created. We are:", host1.ID())
 
-	logger.Info(host.Addrs())
+	logger.Info(host1.Addrs())
 
 	// Set a function as stream handler. This function is called when a peer
 
 	// initiates a connection and starts a stream with this peer.
 
-	host.SetStreamHandler(protocol.ID(config.ProtocolID), handleStream)
+	host1.SetStreamHandler(protocol.ID(config.ProtocolID), handleStream)
 
-	// Start a DHT, for use in peer discovery. We can't just make a new DHT
+	// Start a DHT, for use ipeern peer discovery. We can't just make a new DHT
 
 	// client because we want each peer to maintain its own local copy of the
 
@@ -191,7 +275,7 @@ func main() {
 
 	// inhibiting future peer discovery.
 
-	kademliaDHT, err := dht.New(ctx, host)
+	kademliaDHT, err := dht.New(ctx, host1)
 
 	if err != nil {
 
@@ -215,6 +299,12 @@ func main() {
 
 	// other nodes in the network.
 	fmt.Println()
+	//pubs, err1 := ps.NewFloodSub(ctx, host)
+	/*
+		if err1 != nil {
+			panic(err1)
+		}
+	*/
 	//fmt.Println(kademliaDHT.RoutingTable().ListPeers())
 
 	var wg sync.WaitGroup
@@ -229,7 +319,7 @@ func main() {
 
 			defer wg.Done()
 
-			if err := host.Connect(ctx, *peerinfo); err != nil {
+			if err := host1.Connect(ctx, *peerinfo); err != nil {
 
 				logger.Warning(err)
 
@@ -261,11 +351,11 @@ func main() {
 	// Now, look for others who have announced
 
 	// This is like your friend telling you the location to meet you.
-
+	//search:
 	logger.Info("Searching for other peers...")
 
 	peerChan, err := routingDiscovery.FindPeers(ctx, config.RendezvousString)
-	fmt.Println("AFTER searching")
+	//fmt.Println("AFTER searching")
 	if err != nil {
 
 		panic(err)
@@ -273,8 +363,8 @@ func main() {
 	}
 
 	for peer := range peerChan {
-		fmt.Println("hello rahul")
-		if peer.ID == host.ID() {
+		//fmt.Println("hello rahul")
+		if peer.ID == host1.ID() {
 
 			continue
 
@@ -287,32 +377,41 @@ func main() {
 
 		logger.Info("Connecting to:", peer)
 
-		stream, err := host.NewStream(ctx, peer.ID, protocol.ID(config.ProtocolID))
+		err4 := host1.Connect(ctx, peer) //we connect to other peer
 
-		if err != nil {
-			fmt.Println("log")
-			logger.Warning("Connection failed:", err)
-
+		if err4 != nil {
+			fmt.Println("Connection not possible", peer)
 			continue
-
-		} else {
-
-			rw := bufio.NewReadWriter(bufio.NewReader(stream), bufio.NewWriter(stream))
-
-			go writeData(rw)
-
-			go readData(rw)
-
 		}
 
 		logger.Info("Connected to:", peer)
 		//fmt.Println(kademliaDHT)
 
 	}
-	fmt.Println("Before Select")
-	//if flagpeer==0 {}
-	fmt.Println(kademliaDHT.RoutingTable().ListPeers())
-	//kademliaDHT.Update()
+
+	//if flagpeer == 0 {
+	//	goto search
+	//}
+	//var wg1 sync.WaitGroup
+	var ids = kademliaDHT.RoutingTable().ListPeers()
+	for x := range ids {
+		//sfmt.Println(ids)
+		stream, err := host1.NewStream(ctx, ids[x], protocol.ID(config.ProtocolID))
+		if err != nil {
+			logger.Warning("Connection failed:", err)
+			continue
+		} else {
+			//wg1.Add(1)
+			rw := bufio.NewReadWriter(bufio.NewReader(stream), bufio.NewWriter(stream))
+			fmt.Println("Sending Query to :", ids[x])
+			sendQuery(rw, host1.ID().String())
+			//recieversp(rw)
+			//stream.Close()
+		}
+	}
+
+	fmt.Println("Wallet Data", walletmap4.Data)
+
 	select {}
-	fmt.Println("After Select")
+
 }
