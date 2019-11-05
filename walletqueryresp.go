@@ -38,7 +38,9 @@ import (
 //var walletmap = make(map[string]string)
 var done = make(chan []byte)
 var walletmap4 *mp.WalletMap
+var recievedmap1 *mp.WalletMap
 var host1 host.Host
+var hashOfmap string
 
 //var m = make(map[string]string)
 
@@ -46,10 +48,12 @@ var logger = log.Logger("rendezvous")
 
 func sendResponse(str string) {
 	//fmt.Println("Inresponse")
-	msg := Cntxtmessage{
+	//h := sha256.New()
+	//h.Write([]byte(walletmap4.Data))
+	msg := Kipcntxtmessage{
 
-		Type:      Cntxtmessage_RESPONSE,
-		Data:      walletmap4.Data,
+		Type:      Kipcntxtmessage_RESPONSE,
+		Data:      hashOfmap,
 		Sid:       host1.ID().String(),
 		Delimiter: "|",
 	}
@@ -80,10 +84,10 @@ func sendResponse(str string) {
 func sendQuery(rw *bufio.ReadWriter, id string) {
 	fmt.Println("Sending Query")
 	//rw := bufio.NewReadWriter(bufio.NewReader(stream), bufio.NewWriter(stream))
-	msg := Cntxtmessage{
+	msg := Kipcntxtmessage{
 
-		Type:      Cntxtmessage_QUERY,
-		Data:      nil,
+		Type:      Kipcntxtmessage_QUERY,
+		Data:      "",
 		Sid:       id,
 		Delimiter: "|",
 	}
@@ -99,14 +103,14 @@ func sendQuery(rw *bufio.ReadWriter, id string) {
 
 }
 func processmessage(rw *bufio.ReadWriter, msg []byte) {
-	recieved := &Cntxtmessage{}    //Create a template of message
+	recieved := &Kipcntxtmessage{} //Create a template of message
 	proto.Unmarshal(msg, recieved) //unmarshal the message
 
 	var MsgType = recieved.GetType() //Identify the type of message
 	var senderid = recieved.GetSid()
 
 	fmt.Println("Processing the message")
-	if MsgType == Cntxtmessage_QUERY {
+	if MsgType == Kipcntxtmessage_QUERY {
 		fmt.Println("Its a query from Node: ", senderid)
 		fmt.Println("Intiating Response ")
 		sendResponse(senderid)
@@ -114,9 +118,10 @@ func processmessage(rw *bufio.ReadWriter, msg []byte) {
 	} else {
 		fmt.Println("It is Response message from Node:", senderid)
 		fmt.Println("Adding Response data to local Map")
-		MapData := recieved.GetData()
-		walletmap4.PutEntries(MapData)
-		fmt.Println("Wallet Details", walletmap4.Data)
+		var temphash = recieved.GetData()
+		recievedmap1.Put(temphash, recieved.Sid)
+		//walletmap4.PutEntries(MapData)
+		fmt.Println("Recieved Hash", temphash)
 
 	}
 
@@ -134,7 +139,6 @@ func handleStream(stream network.Stream) {
 
 	go readData(rw, done)
 
-	
 }
 
 func readData(rw *bufio.ReadWriter, done chan []byte) {
@@ -189,8 +193,10 @@ func writeData(rw *bufio.ReadWriter, data []byte) {
 
 func main() {
 	walletmap4 = mp.New()
+	recievedmap1 = mp.New()
 	walletmap4.Put("WalletId:21", "Address:21")
-	//walletmap4.Put("WalletId:22", "Address:123")
+	walletmap4.Put("WalletId:22", "Address:123")
+	walletmap4.Put("walletId:2345", "Address:1234")
 	//log.SetAllLoggers(logging.WARNING)
 
 	log.SetLogLevel("rendezvous", "info")
@@ -366,25 +372,27 @@ func main() {
 		//fmt.Println(kademliaDHT)
 
 	}
-
+	//	fmt.Print(kademliaDHT.GetPublicKey(ctx, "QmdSyhb8eR9dDSR5jjnRoTDBwpBCSAjT7WueKJ9cQArYoA"))
 	//if flagpeer == 0 {
 	//	goto search
 	//}
 	//var wg1 sync.WaitGroup
+	//fmt.Println(string(kademliaDHT.PutValue(ctx, "QmdSyhb8eR9dDSR5jjnRoTDBwpBCSAjT7WueKJ9cQArYoA", []byte(""))))
 	var ids = kademliaDHT.RoutingTable().ListPeers()
 	for x := range ids {
 		//sfmt.Println(ids)
+		//fmt.Println(ids[x])
+		//fmt.Print(kademliaDHT.GetValue(ctx, string(ids[x])))
 		stream, err := host1.NewStream(ctx, ids[x], protocol.ID(config.ProtocolID))
 		if err != nil {
 			logger.Warning("Connection failed:", err)
 			continue
 		} else {
-			//wg1.Add(1)
+
 			rw := bufio.NewReadWriter(bufio.NewReader(stream), bufio.NewWriter(stream))
 			fmt.Println("Sending Query to :", ids[x])
 			sendQuery(rw, host1.ID().String())
-			//recieversp(rw)
-			//stream.Close()
+
 		}
 	}
 
